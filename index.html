@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autocomplete Search</title>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+    <div class="container mt-4">
+        <h1>Title Autocomplete Search</h1>
+        <div class="mb-3">
+            <input class="form-control" id="exampleDataList" placeholder="Type to search...">
+        </div>
+        <ul class="list-group" id="suggestionsList"></ul>
+    </div>
+
+    <script>
+        $(document).ready(function() {
+            $('#exampleDataList').on('input', function() {
+                var query = $(this).val();
+                if (query.length > 0) {
+                    $.ajax({
+                        type: 'GET',
+                        url: '/autocomplete',
+                        data: {'query': query},
+                        success: function(data) {
+                            $('#suggestionsList').empty();
+                            data.suggestions.forEach(function(suggestion) {
+                                $('#suggestionsList').append(`<li class="list-group-item">${suggestion}</li>`);
+                            });
+                        }
+                    });
+                } else {
+                    $('#suggestionsList').empty();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
