@@ -8,11 +8,89 @@ es = Elasticsearch(
 
 index_name = "reuters_news_index"
 
+def get_top_georeferences(index_name):
+    aggregation_query = {
+        "size": 10,
+        "aggs": {
+            "top_georeferences": {
+                "terms": {
+                    "field": "Georeferences.keyword",
+                    "size": 10
+                }
+            }
+        }
+    }
+
+    try:
+        results = es.search(index=index_name, body=aggregation_query)
+        top_georeferences = []
+
+        if 'aggregations' in results:
+            nested_aggregation = results['aggregations'].get('top_georeferences', {})
+            if 'buckets' in nested_aggregation:
+                buckets = nested_aggregation['buckets']
+                top_georeferences = [{"key": nested_bucket['key'], "doc_count": nested_bucket['doc_count']} for nested_bucket in buckets]
+
+        return top_georeferences
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return []
+
+def search_documents(query, temporal_expression, georeference):
+    search_body = {
+        "_source": ["Title", "Content", "Date", "Georeferences"],
+        "query": {
+            "bool": {
+                "must": {
+                    "multi_match": {
+                        "query": query,
+                        "fields": ["Title^2", "Content"]
+                    }
+                },
+                "should": [
+                    {
+                        "match": {
+                        "TemporalExpressions": temporal_expression
+                        }
+                    },
+                    {
+                            "match": {
+                                "Georeferences.name": georeference
+                            }
+                    }
+                ],
+                "minimum_should_match": 1,
+            }
+        },
+        "sort": [
+            "_score"
+        ]
+    }
+
+    results = es.search(index=index_name, body=search_body)
+
+    relevant_documents = []
+
+    for hit in results['hits']['hits']:
+        document = {
+            'Title': hit['_source']['Title'],
+            'Content': hit['_source']['Content'],
+            'Date': hit['_source']['Date'],
+            'Georeferences': hit['_source']['Georeferences']
+        }
+    relevant_documents.append(document)
+
+
+    return relevant_documents
+
+
 app = Flask(__name__)
 
 @app.route("/")
 def main():
     return send_file('index.html')
+
 
 @app.route('/autocomplete', methods=['GET'])
 def autocomplete():
@@ -61,54 +139,6 @@ def autocomplete():
 
     return jsonify(suggestions=suggestions)
 
-def search_documents(query, temporal_expression, georeference):
-    search_body = {
-        "size": 10,
-        "_source": ["Title", "Content", "Date", "Georeferences"],
-        "query": {
-            "bool": {
-                "must": {
-                    "multi_match": {
-                        "query": query,
-                        "fields": ["Title^2", "Content"]
-                    }
-                },
-                "should": [
-                    {
-                        "match": {
-                        "TemporalExpressions": temporal_expression
-                        }
-                    },
-                    {
-                            "match": {
-                                "Georeferences.name": georeference
-                            }
-                    }
-                ],
-                "minimum_should_match": 1,
-            }
-        },
-        "sort": [
-            "_score"
-        ]
-    }
-
-    results = es.search(index=index_name, body=search_body)
-
-    relevant_documents = []
-
-    for hit in results['hits']['hits']:
-        document = {
-            'Title': hit['_source']['Title'],
-            'Content': hit['_source']['Content'],
-            'Date': hit['_source']['Date'],
-            'Georeferences': hit['_source']['Georeferences']
-        }
-    relevant_documents.append(document)
-
-
-    return relevant_documents
-
 
 @app.route('/search', methods=['POST'])
 def search():
@@ -125,37 +155,6 @@ def search():
 
     return jsonify({"results": results})
 
-def get_top_georeferences(index_name):
-    aggregation_query = {
-        "size": 0,
-        "aggs": {
-            "top_georeferences": {
-                "terms": {
-                    "field": "Georeferences.keyword",
-                    "size": 10
-                }
-            }
-        }
-    }
-
-    try:
-        results = es.search(index=index_name, body=aggregation_query)
-        top_georeferences = []
-
-        # Check if 'aggregations' key exists in results
-        if 'aggregations' in results:
-            nested_aggregation = results['aggregations'].get('top_georeferences', {})
-            if 'buckets' in nested_aggregation:
-                buckets = nested_aggregation['buckets']
-                top_georeferences = [{"key": nested_bucket['key'], "doc_count": nested_bucket['doc_count']} for nested_bucket in buckets]
-
-        return top_georeferences
-
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        return []
-
-
 
 @app.route('/top_georeferences', methods=['GET'])
 def top_georeferences():
@@ -163,7 +162,7 @@ def top_georeferences():
     return jsonify(result)
 
 
-@app.route('/document_distribution_over_time', methods=['GET'])
+@app.route('/distribution', methods=['GET'])
 def document_distribution_over_time():
 
     aggregation_query = {
